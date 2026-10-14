@@ -1,0 +1,73 @@
+name: Veille des services
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # toutes les 10 minutes
+    - cron: "0 6 1 * *"      # le 1er du mois : maintien en vie (GitHub coupe les tâches après 60 jours sans activité)
+  workflow_dispatch:
+    inputs:
+      simulation:
+        description: "Simuler une panne (pour tester l'alerte)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: veille
+  cancel-in-progress: false
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier portail, SSS OS, site et DNS
+        id: check
+        run: |
+          if [ "${{ inputs.simulation }}" = "true" ]; then
+            echo "Simulation d'une panne (test de l'alerte)." | tee problemes.txt
+            exit 1
+          fi
+          bash verifier.sh
+
+      - name: Alerte — ouvrir (ou compléter) l'incident
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          titre="PANNE — un service Swiss Solar System ne répond plus"
+          corps="$(date -u '+%d.%m.%Y %H:%M UTC') — $(cat problemes.txt 2>/dev/null || echo 'voir le journal de la vérification')
+
+          Journal : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          En attendant la correction, le portail reste joignable sur https://sss-monitor-hub.vercel.app"
+          existant=$(gh issue list --state open --label panne --json number --jq '.[0].number')
+          if [ -n "$existant" ]; then
+            gh issue comment "$existant" --body "$corps"
+          else
+            gh label create panne --color B60205 --force >/dev/null 2>&1 || true
+            gh issue create --title "$titre" --label panne --body "$corps" --assignee "${{ github.repository_owner }}"
+          fi
+
+      - name: Rétabli — refermer l'incident
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --state open --label panne --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Rétabli le $(date -u '+%d.%m.%Y à %H:%M UTC') : tout répond de nouveau."
+          done
+
+      - name: Maintien en vie mensuel
+        if: github.event.schedule == '0 6 1 * *'
+        run: |
+          date -u '+%Y-%m-%d' > derniere-veille.txt
+          git config user.name "sss-veille"
+          git config user.email "sss-veille@users.noreply.github.com"
+          git add derniere-veille.txt
+          git commit -m "Veille : maintien en vie $(date -u '+%Y-%m')" && git push || true
