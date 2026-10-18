@@ -8,6 +8,7 @@ PORTAIL_HOST="monitor.swisssolarsystem.ch"
 PORTAIL_CIBLE="82a4a7a8a157371f.vercel-dns-017.com."   # cible CNAME exigée par Vercel
 URLS=(
   "https://monitor.swisssolarsystem.ch/login|Swiss Solar System|Portail des régies"
+  "https://monitor.swisssolarsystem.ch/api/health|\"status\":\"ok\"|Contrôle de santé du portail (base de données)"
   "https://swisssolar.github.io/|SSS|SSS OS (collaborateurs)"
   "https://www.swisssolarsystem.ch/||Site web"
 )
